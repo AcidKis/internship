@@ -55,10 +55,63 @@ function mySortForKey(array $a, string $b): array
     return array_merge(mySortForKey($less, $b), $equal, mySortForKey($more, $b));
 }
 
-var_dump(mySortForKey([
-    ['a' => 2, 'b' => 1],
-    ['a' => 3, 'b' => 3],
-    ['a' => 1, 'b' => 2],
-    ['a' => 5, 'b' => 5],
-    ['a' => 1, 'b' => 1]
-], 'a'));
+function importXml($a)
+{
+    $xml = simplexml_load_file($a);
+
+
+
+    $mysqli = new mysqli('localhost', 'root', 'root', 'test_samson');
+
+    mysqli_set_charset($mysqli, "utf8mb4");
+
+    foreach ($xml->{'Товар'} as $product) {
+        $code = (int) $product['Код'];
+        $name = (string) $product['Название'];
+
+        $mysqli->query("INSERT INTO a_product (code, name) 
+        VALUES ($code, '$name')");
+
+        $product_id = $mysqli->insert_id;
+
+        foreach ($product->{'Цена'} as $price) {
+            $type = (string) $price['Тип'];
+            $priceForType = (float) $price;
+            $mysqli->query("INSERT INTO a_price (product_id, price_type, price) VALUES ($product_id, '$type', $priceForType)");
+        }
+
+        foreach ($product->{'Свойства'}->children() as  $property) {
+            $propertyName = $property->getName();
+            $propertyValue = (string) $property  . $property->attributes()['ЕдИзм'];
+            $mysqli->query("INSERT INTO a_property (product_id, property_name, property_value) VALUES ($product_id, '$propertyName', '$propertyValue')");
+        }
+
+        $parent_id = null;
+
+        foreach ($product->{'Разделы'}->{'Раздел'} as $tag) {
+            $sectionName = (string) $tag;
+            $codeProd = rand(1, 100);
+
+            $repeatCheck = $mysqli->query("SELECT id FROM a_category WHERE name = '$sectionName'");
+
+
+
+            if ($repeatCheck->num_rows > 0) {
+                $category_id = $repeatCheck->fetch_assoc()['id'];
+            } else {
+                $mysqli->query("INSERT INTO a_category (code, name, parent_id) VALUES ($codeProd, '$sectionName', " . ($parent_id ? $parent_id : "NULL") . ")");
+                $category_id = $mysqli->insert_id;
+            }
+
+            $mysqli->query("INSERT INTO product_category (product_id, category_id) 
+            VALUES ($product_id, $category_id)");
+
+            $parent_id = $category_id;
+        }
+
+    }
+
+    $mysqli->close();
+}
+
+importXml('2.xml');
