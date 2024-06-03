@@ -2,6 +2,8 @@
 
 //- функцию convertString($a, $b). Результат ее выполнение: если в строке $a содержится 2 и более подстроки $b,
 // то во втором месте заменить подстроку $b на инвертированную подстроку.
+
+// добавлено: в случае если подстрока не найдена возвращаем строку как есть, а не выбрасываем исключение
 function convertString(string $a,string $b): string
 {
 
@@ -10,7 +12,7 @@ function convertString(string $a,string $b): string
     for ($i = 1; $i <= 2; $i++) {
         $position = stripos($a, $b, $position);
         if ($position === false) {
-            throw new InvalidArgumentException('Подстрока не найдена или меньше 2х');
+            return $a;
         }
         if ($i == 1) {
             $position += strlen($b);
@@ -26,10 +28,18 @@ function convertString(string $a,string $b): string
 
 // Я попробовал использовать алгоритм быстрой сортировки из "грокаем алгоритмы", не уверен, что получилось правильно
 // и быстро, но код вроде как работает
+
+
+// Добавлено: добавлена проверка на случай если не будет ключа в массиве для pivot
 function mySortForKey(array $a, string $b): array
 {
     if (count($a) < 2) {
         return $a;
+    }
+
+
+    if (!isset($a[0][$b])) {
+        throw new InvalidArgumentException('Не найден ключ в массиве ');
     }
 
     $pivot = $a[0][$b];
