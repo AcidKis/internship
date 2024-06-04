@@ -2,6 +2,8 @@
 
 //- функцию convertString($a, $b). Результат ее выполнение: если в строке $a содержится 2 и более подстроки $b,
 // то во втором месте заменить подстроку $b на инвертированную подстроку.
+
+// добавлено: в случае если подстрока не найдена возвращаем строку как есть, а не выбрасываем исключение
 function convertString(string $a,string $b): string
 {
 
@@ -10,7 +12,7 @@ function convertString(string $a,string $b): string
     for ($i = 1; $i <= 2; $i++) {
         $position = stripos($a, $b, $position);
         if ($position === false) {
-            throw new InvalidArgumentException('Подстрока не найдена или меньше 2х');
+            return $a;
         }
         if ($i == 1) {
             $position += strlen($b);
@@ -26,10 +28,18 @@ function convertString(string $a,string $b): string
 
 // Я попробовал использовать алгоритм быстрой сортировки из "грокаем алгоритмы", не уверен, что получилось правильно
 // и быстро, но код вроде как работает
+
+
+// Добавлено: добавлена проверка на случай если не будет ключа в массиве для pivot
 function mySortForKey(array $a, string $b): array
 {
     if (count($a) < 2) {
         return $a;
+    }
+
+
+    if (!isset($a[0][$b])) {
+        throw new InvalidArgumentException('Не найден ключ в массиве ');
     }
 
     $pivot = $a[0][$b];
@@ -56,93 +66,156 @@ function mySortForKey(array $a, string $b): array
 }
 
 // либо я что-то не понял, либо функция очень сложная, весь день с ней провозился
-function importXml(string $a)
+
+
+//Правки по бд: хранение свойств товара в отдельной таблице, связанная таблица product_property, добавлена уникальность
+//нескольким столбцам
+
+//по импорту экспорту: парсинг выведен в отдельную функцию, наконец-то получилось сделать чтобы и выглядело более менее
+//по человечески, и чтобы все работало все теги,свойства категории прокидваюься, также использовал многомерный массив
+//и там и там для удобства понимания
+
+//не хотел возится с установкой xDebug :P
+function vardump($var) {
+    echo '<pre>';
+    var_dump($var);
+    echo '</pre>';
+}
+
+function parseFile(string $a): array
 {
     $xml = simplexml_load_file($a);
+    $productsData = [];
+    foreach ($xml->{'Товар'} as $product) {
+
+        $productsData[(int) $product['Код']] = [
+            "Название продукта" => (string) $product['Название'],
+            "Цена" => [],
+            "Свойства" => [],
+            "Разделы" => [],
+        ];
+
+        foreach ($product->{'Цена'} as $price) {
+            $productsData[(int) $product['Код']]["Цена"][(string)$price["Тип"]] = (float) $price;
+        }
+
+        foreach ($product->{'Свойства'}->children() as $property) {
+            $productsData[(int) $product['Код']]["Свойства"][(string)$property->getName()][] = "$property" . (isset($property["ЕдИзм"]) ? " $property[ЕдИзм]" : "");
+        }
+
+        foreach ($product->{'Разделы'}->{'Раздел'} as $category) {
+            $productsData[(int) $product['Код']]["Разделы"][] = (string) $category;
+        }
+    }
+
+    return $productsData;
+}
 
 
+function importXml(string $a)
+{
 
     $mysqli = new mysqli('localhost', 'root', 'root', 'test_samson');
 
     mysqli_set_charset($mysqli, "utf8mb4");
 
-    foreach ($xml->{'Товар'} as $product) {
-        $code = (int) $product['Код'];
-        $name = (string) $product['Название'];
-
-        $mysqli->query("INSERT INTO a_product (code, name) 
-        VALUES ($code, '$name')");
+    foreach (parseFile('2.xml') as $code => $product) {
+        $name = $product['Название продукта'];
+        $mysqli->query("INSERT INTO a_product (product_code, name) 
+                    VALUES ('$code', '$name')");
 
         $product_id = $mysqli->insert_id;
 
-        foreach ($product->{'Цена'} as $price) {
-            $type = (string) $price['Тип'];
-            $priceForType = (float) $price;
-            $mysqli->query("INSERT INTO a_price (product_id, price_type, price) VALUES ($product_id, '$type', $priceForType)");
+        foreach ($product['Цена'] as $type => $price) {
+            $mysqli->query("INSERT INTO a_price (product_id, price_type, price)
+            VALUES ('$product_id', '$type', '$price')");
         }
 
-        foreach ($product->{'Свойства'}->children() as  $property) {
-            $propertyName = $property->getName();
-            $propertyValue = (string) $property  . $property->attributes()['ЕдИзм'];
-            $mysqli->query("INSERT INTO a_property (product_id, property_name, property_value) VALUES ($product_id, '$propertyName', '$propertyValue')");
+        foreach ($product['Свойства'] as $property_name => $property_values) {
+            foreach ($property_values as $value) {
+                $property_unit = "";
+
+                if (str_contains($value, " ")) {
+                    list($value, $property_unit) = explode(" ", $value);
+                }
+
+                // Проверка существования свойства
+                $result = $mysqli->query("SELECT id FROM a_property WHERE property_name='$property_name' AND property_unit='$property_unit'");
+                if ($result->num_rows == 0) {
+                    $mysqli->query("INSERT INTO a_property (property_name, property_unit) VALUES ('$property_name', '$property_unit')");
+                    $property_id = $mysqli->insert_id;
+                } else {
+                    $row = $result->fetch_assoc();
+                    $property_id = $row['id'];
+                }
+
+                $mysqli->query("INSERT INTO product_property (product_id, property_id, property_value) VALUES ('$product_id', '$property_id', '$value')");
+            }
         }
 
         $parent_id = null;
 
-        foreach ($product->{'Разделы'}->{'Раздел'} as $tag) {
-            $sectionName = (string) $tag;
-            $codeProd = rand(1, 100);
+        foreach ($product['Разделы'] as $category_name) {
+            // Проверка существования категории
+            $category_code = md5($category_name);
 
-            $repeatCheck = $mysqli->query("SELECT id FROM a_category WHERE name = '$sectionName'");
+            $result = $mysqli->query("SELECT id FROM a_category WHERE category_name='$category_name'");
+            if ($result->num_rows == 0) {
 
+                if (isset($parent_id)) {
+                    $mysqli->query("INSERT INTO a_category (category_name, parent_id, category_code) VALUES ('$category_name' , '$parent_id', '$category_code')");
+                } else {
+                    $mysqli->query("INSERT INTO a_category (category_name, category_code) VALUES ('$category_name', '$category_code')");
+                }
 
-
-            if ($repeatCheck->num_rows > 0) {
-                $category_id = $repeatCheck->fetch_assoc()['id'];
-            } else {
-                $mysqli->query("INSERT INTO a_category (code, name, parent_id) VALUES ($codeProd, '$sectionName', " . ($parent_id ? $parent_id : "NULL") . ")");
                 $category_id = $mysqli->insert_id;
+                $parent_id = $category_id;
+
+            } else {
+                $row = $result->fetch_assoc();
+                $category_id = $row['id'];
             }
-
-            $mysqli->query("INSERT INTO product_category (product_id, category_id) 
-            VALUES ($product_id, $category_id)");
-
-            $parent_id = $category_id;
+            $mysqli->query("INSERT INTO product_category (product_id, category_id) VALUES ('$product_id', '$category_id')");
         }
 
+
+
     }
+
 
     $mysqli->close();
 }
 
-function exportXml(string $filename, int $categoryId)
+function exportXml(string $filename, string $categoryCode)
 {
     $mysqli = new mysqli('localhost', 'root', 'root', 'test_samson');
     mysqli_set_charset($mysqli, "utf8mb4");
-
-    // Получение всех дочерних категорий
-    $ids = [$categoryId];
-    //забираем пока не закончатся родители
+    // Забираем всех детей с категории
+    $result = $mysqli->query("SELECT id FROM a_category WHERE category_code = '$categoryCode'");
+    $categoryId= $result->fetch_row();
+    $ids = [(int) $categoryId[0]];
+    $childs = null;
     while ($childs == false) {
-        $childs = $mysqli->query("SELECT parent_id FROM a_category WHERE id = $categoryId");
+        $check = end($ids);
+        $childs = $mysqli->query("SELECT id FROM a_category WHERE parent_id = '$check'");
+        while ($row = $childs->fetch_assoc()) {
+            $ids[] = (int) $row['id'];
+        }
     }
 
-    while ($row = $childs->fetch_assoc()) {
-        $ids[] = $row['parent_id'];
-    }
     $ids = implode("," , $ids);
+
     // Запрос данных из базы данных
-    $query = "SELECT 
-                p.id AS product_id, p.code, p.name AS product_name, 
-                c.name AS category_name, 
-                pr.price_type, pr.price,
-                prp.property_name, prp.property_value
-              FROM product_category pc
-              JOIN a_product p ON pc.product_id = p.id
-              JOIN a_category c ON pc.category_id = c.id
-              JOIN a_price pr ON pc.product_id = pr.product_id
-              JOIN a_property prp ON pc.product_id = prp.product_id 
-              WHERE pc.category_id IN ($ids)";
+    $query = "SELECT pc.product_id, pc.category_id, prd.product_code, prd.name, pp.property_value, prp.property_name, prp.property_unit, c.category_name, prc.price_type, prc.price
+	
+	FROM product_category pc
+    LEFT JOIN a_product prd on pc.product_id = prd.id
+	JOIN a_price prc on pc.product_id = prc.product_id
+    JOIN product_property pp on pc.product_id = pp.product_id
+    JOIN a_property prp on pp.property_id = prp.id
+    JOIN a_category c ON pc.category_id = c.id
+    
+	WHERE pc.category_id IN ('$ids')";
 
     $result = $mysqli->query($query);
 
@@ -152,43 +225,63 @@ function exportXml(string $filename, int $categoryId)
     $productsData = [];
 
     while ($row = $result->fetch_assoc()) {
-        $productId = $row['product_id'];
-        if (!isset($productsData[$productId])) {
-            $productsData[$productId] = [
-                'code' => $row['code'],
-                'name' => $row['product_name'],
-                'prices' => [],
-                'properties' => [],
-                'categories' => []
+        $productCode = $row['product_code'];
+        if (!isset($productsData[$productCode])) {
+            $productsData[$productCode] = [
+                'Название продукта' => $row['name'],
+                'Цена' => [],
+                'Свойства' => [],
+                'Разделы' => []
             ];
         }
-        $productsData[$productId]['prices'][$row['price_type']] = $row['price'];
-        //так и не придумал как всунуть второй формат тк ключи уникальные
-        $productsData[$productId]['properties'][$row['property_name']] = $row['property_value'];
-        //2 раздела я впихнул, но они по сути обязательные, а свойства могут менятся, и повторятся
-        $productsData[$productId]['categories'][] = $row['category_name'];
+        //цены
+        $productsData[$productCode]['Цена'][$row['price_type']] = $row['price'];
+        //свойства
+
+        //для избежания предупреждения что ключа нет
+        if (!isset($productsData[$productCode]['Свойства'][(string)$row['property_name']])) {
+            $productsData[$productCode]['Свойства'][(string)$row['property_name']] = [];
+        }
+
+        if (!in_array($row['property_value'],(array) $productsData[$productCode]['Свойства'][(string)$row['property_name']]) ){
+            $productsData[$productCode]['Свойства'][$row['property_name']][] = $row['property_value'] . $row['property_unit'];
+        }
+
+        //Разделы
+        if (!in_array($row['category_name'],$productsData[$productCode]['Разделы'])){
+            $productsData[$productCode]['Разделы'][] = $row['category_name'];
+        }
+
     }
 
-    foreach ($productsData as $product) {
+    foreach ($productsData as $code => $product) {
         $productElement = $dom->createElement('Товар');
-        $productElement->setAttribute('Код', $product['code']);
-        $productElement->setAttribute('Название', $product['name']);
+        $productElement->setAttribute('Код', $code);
+        $productElement->setAttribute('Название', $product['Название продукта']);
 
-        foreach ($product['prices'] as $type => $price) {
+        foreach ($product['Цена'] as $type => $price) {
             $priceElement = $dom->createElement('Цена', $price);
             $priceElement->setAttribute('Тип', $type);
             $productElement->appendChild($priceElement);
         }
 
         $propertiesElement = $dom->createElement('Свойства');
-        foreach ($product['properties'] as $name => $value) {
-            $propertyElement = $dom->createElement($name, $value);
-            $propertiesElement->appendChild($propertyElement);
+        foreach ($product['Свойства'] as $name => $value) {
+            foreach ($value as $propValue) {
+                if (str_contains($propValue, " ")) {
+                    list($propValue, $property_unit) = explode(" ", $value);
+                    $propertyElement = $dom->createElement($name, $propValue);
+                    $propertyElement->setAttribute('ЕдИзм', $property_unit);
+                } else {
+                    $propertyElement = $dom->createElement($name, $propValue);
+                }
+                $propertiesElement->appendChild($propertyElement);
+            }
         }
         $productElement->appendChild($propertiesElement);
 
         $categoriesElement = $dom->createElement('Разделы');
-        foreach (array_unique($product['categories']) as $category) {
+        foreach (array_unique($product['Разделы']) as $category) {
             $categoryElement = $dom->createElement('Раздел', $category);
             $categoriesElement->appendChild($categoryElement);
         }
@@ -203,5 +296,5 @@ function exportXml(string $filename, int $categoryId)
     $mysqli->close();
 
 }
-
-exportXml('2-xml.xml', 3);
+exportXml('2-xml.xml','1325b65d1c09915fca67ba811e315987');
+vardump(parseFile('2.xml'));

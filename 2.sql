@@ -24,10 +24,12 @@ DROP TABLE IF EXISTS `a_category`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `a_category` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `code` varchar(50) NOT NULL,
-  `name` varchar(255) NOT NULL,
+  `category_code` varchar(50) NOT NULL,
+  `category_name` varchar(255) NOT NULL,
   `parent_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `category_code` (`category_code`),
+  UNIQUE KEY `category_name` (`category_name`),
   KEY `parent_id` (`parent_id`),
   CONSTRAINT `a_category_ibfk_1` FOREIGN KEY (`parent_id`) REFERENCES `a_category` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -76,9 +78,10 @@ DROP TABLE IF EXISTS `a_product`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `a_product` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `code` varchar(50) NOT NULL,
+  `product_code` varchar(50) NOT NULL,
   `name` varchar(255) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `product_code` (`product_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -99,11 +102,10 @@ DROP TABLE IF EXISTS `a_property`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `a_property` (
-  `product_id` int(11) DEFAULT NULL,
-  `property_name` varchar(255) DEFAULT NULL,
-  `property_value` varchar(255) DEFAULT NULL,
-  KEY `product_id` (`product_id`),
-  CONSTRAINT `a_property_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `a_product` (`id`)
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `property_name` varchar(255) NOT NULL,
+  `property_unit` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -141,6 +143,33 @@ LOCK TABLES `product_category` WRITE;
 /*!40000 ALTER TABLE `product_category` DISABLE KEYS */;
 /*!40000 ALTER TABLE `product_category` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `product_property`
+--
+
+DROP TABLE IF EXISTS `product_property`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `product_property` (
+  `product_id` int(11) DEFAULT NULL,
+  `property_id` int(11) DEFAULT NULL,
+  `property_value` varchar(255) DEFAULT NULL,
+  KEY `product_id` (`product_id`),
+  KEY `property_id` (`property_id`),
+  CONSTRAINT `product_property_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `a_product` (`id`),
+  CONSTRAINT `product_property_ibfk_2` FOREIGN KEY (`property_id`) REFERENCES `a_property` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `product_property`
+--
+
+LOCK TABLES `product_property` WRITE;
+/*!40000 ALTER TABLE `product_property` DISABLE KEYS */;
+/*!40000 ALTER TABLE `product_property` ENABLE KEYS */;
+UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -151,4 +180,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2024-05-22 21:13:15
+-- Dump completed on 2024-06-03 21:47:17
