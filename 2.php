@@ -112,23 +112,32 @@ function parseFile(string $a): array
 }
 
 
-function importXml(string $a)
+function importXml(string $a): void
 {
 
     $mysqli = new mysqli('localhost', 'root', 'root', 'test_samson');
 
     mysqli_set_charset($mysqli, "utf8mb4");
 
-    foreach (parseFile('2.xml') as $code => $product) {
+    foreach (parseFile($a) as $code => $product) {
         $name = $product['Название продукта'];
-        $mysqli->query("INSERT INTO a_product (product_code, name) 
-                    VALUES ('$code', '$name')");
 
-        $product_id = $mysqli->insert_id;
+        $result = $mysqli->query("SELECT id FROM a_product WHERE product_code='$code'");
+        if ($result->num_rows == 0) {
+            $mysqli->query("INSERT INTO a_product (product_code, name) VALUES ('$code', '$name')");
+            $product_id = $mysqli->insert_id;
+        } else {
+            $row = $result->fetch_assoc();
+            $product_id = $row['id'];
+        }
 
         foreach ($product['Цена'] as $type => $price) {
-            $mysqli->query("INSERT INTO a_price (product_id, price_type, price)
-            VALUES ('$product_id', '$type', '$price')");
+            $type = $mysqli->real_escape_string($type);
+            // Проверка существования цены
+            $result = $mysqli->query("SELECT id FROM a_price WHERE product_id='$product_id' AND price_type='$type'");
+            if ($result->num_rows == 0) {
+                $mysqli->query("INSERT INTO a_price (product_id, price_type, price) VALUES ('$product_id', '$type', '$price')");
+            }
         }
 
         foreach ($product['Свойства'] as $property_name => $property_values) {
@@ -149,7 +158,10 @@ function importXml(string $a)
                     $property_id = $row['id'];
                 }
 
-                $mysqli->query("INSERT INTO product_property (product_id, property_id, property_value) VALUES ('$product_id', '$property_id', '$value')");
+                $result = $mysqli->query("SELECT * FROM product_property WHERE product_id='$product_id' AND property_id='$property_id' AND property_value='$value'");
+                if ($result->num_rows == 0) {
+                    $mysqli->query("INSERT INTO product_property (product_id, property_id, property_value) VALUES ('$product_id', '$property_id', '$value')");
+                }
             }
         }
 
@@ -175,10 +187,13 @@ function importXml(string $a)
                 $row = $result->fetch_assoc();
                 $category_id = $row['id'];
             }
-            $mysqli->query("INSERT INTO product_category (product_id, category_id) VALUES ('$product_id', '$category_id')");
+
+            $result = $mysqli->query("SELECT * FROM product_category WHERE product_id='$product_id' AND category_id='$category_id'");
+            if ($result->num_rows == 0) {
+                $mysqli->query("INSERT INTO product_category (product_id, category_id) VALUES ('$product_id', '$category_id')");
+            }
+
         }
-
-
 
     }
 
@@ -186,7 +201,7 @@ function importXml(string $a)
     $mysqli->close();
 }
 
-function exportXml(string $filename, string $categoryCode)
+function exportXml(string $filename, string $categoryCode): void
 {
     $mysqli = new mysqli('localhost', 'root', 'root', 'test_samson');
     mysqli_set_charset($mysqli, "utf8mb4");
@@ -243,8 +258,8 @@ function exportXml(string $filename, string $categoryCode)
             $productsData[$productCode]['Свойства'][(string)$row['property_name']] = [];
         }
 
-        if (!in_array($row['property_value'],(array) $productsData[$productCode]['Свойства'][(string)$row['property_name']]) ){
-            $productsData[$productCode]['Свойства'][$row['property_name']][] = $row['property_value'] . $row['property_unit'];
+        if (!in_array($row['property_value'] . ($row['property_unit'] != '' ? " " . $row['property_unit'] : ""), $productsData[$productCode]['Свойства'][(string)$row['property_name']]) ){
+            $productsData[$productCode]['Свойства'][$row['property_name']][] = $row['property_value'] . ($row['property_unit'] != '' ? " " . $row['property_unit'] : "");
         }
 
         //Разделы
@@ -253,6 +268,8 @@ function exportXml(string $filename, string $categoryCode)
         }
 
     }
+
+    vardump($productsData);
 
     foreach ($productsData as $code => $product) {
         $productElement = $dom->createElement('Товар');
@@ -267,13 +284,13 @@ function exportXml(string $filename, string $categoryCode)
 
         $propertiesElement = $dom->createElement('Свойства');
         foreach ($product['Свойства'] as $name => $value) {
-            foreach ($value as $propValue) {
-                if (str_contains($propValue, " ")) {
-                    list($propValue, $property_unit) = explode(" ", $value);
+            foreach ($value as $propValues) {
+                if (str_contains($propValues, " ")) {
+                    list($propValue, $property_unit) = explode(" ", (string)$propValues);
                     $propertyElement = $dom->createElement($name, $propValue);
                     $propertyElement->setAttribute('ЕдИзм', $property_unit);
                 } else {
-                    $propertyElement = $dom->createElement($name, $propValue);
+                    $propertyElement = $dom->createElement($name, $propValues);
                 }
                 $propertiesElement->appendChild($propertyElement);
             }
@@ -296,5 +313,4 @@ function exportXml(string $filename, string $categoryCode)
     $mysqli->close();
 
 }
-exportXml('2-xml.xml','1325b65d1c09915fca67ba811e315987');
-vardump(parseFile('2.xml'));
+exportXml('2-xml.xml','7543b9cbdc39385afbd10412f30cef08');
